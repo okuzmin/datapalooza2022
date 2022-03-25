@@ -71,7 +71,7 @@ httpClient = HttpClient(URL, TOKEN)
 
 # COMMAND ----------
 
-model_name = 'telco-churn-model'
+model_name = "telco_churn_demo_model"
 
 # COMMAND ----------
 
@@ -117,7 +117,3 @@ webhooks = httpClient.listWebhooks({
   "events": ["MODEL_VERSION_CREATED", "MODEL_VERSION_TRANSITIONED_STAGE", "TRANSITION_REQUEST_CREATED"],
 })
 webhooks
-
-# COMMAND ----------
-
-

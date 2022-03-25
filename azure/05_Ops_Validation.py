@@ -6,6 +6,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../includes/configuration
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Fetch Model in Transition
 
@@ -23,11 +27,14 @@ try:
   registry_event = json.loads(dbutils.widgets.get('event_message'))
   model_name = registry_event['model_name']
   version = registry_event['version']
+  
   if 'to_stage' in registry_event and registry_event['to_stage'] != 'Staging':
     dbutils.notebook.exit()
+    
 except Exception:
-  model_name = 'hhar_churn'
+  model_name = 'telco_churn_demo_model'
   version = "1"
+
 print(model_name, version)
 
 # Use webhook payload to load model details and run info
@@ -178,19 +185,14 @@ results.tags
 
 # COMMAND ----------
 
-webhook_url = "https://hooks.slack.com/services/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"
-
-
-# COMMAND ----------
-
 import requests, json
 
+# slack_webhook is defined in "../includes/configuration" script
 slack_message = "Registered model '{}' version {} baseline test results: {}".format(model_name, version, results.tags)
-###webhook_url = dbutils.secrets.get("rk_webhooks", "slack")
 
 body = {'text': slack_message}
 response = requests.post(
-    webhook_url, data=json.dumps(body),
+    slack_webhook, data=json.dumps(body),
     headers={'Content-Type': 'application/json'}
 )
 if response.status_code != 200:
@@ -208,7 +210,7 @@ if response.status_code != 200:
 
 # COMMAND ----------
 
-# MAGIC %run ./helpers/registry_helpers
+# %run ./helpers/registry_helpers
 
 # COMMAND ----------
 

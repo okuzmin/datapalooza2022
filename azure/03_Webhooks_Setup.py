@@ -31,27 +31,36 @@
 
 # COMMAND ----------
 
-import mlflow
-from mlflow.utils.rest_utils import http_request
-import json
+# MAGIC %run ../includes/configuration
 
-def client():
-  return mlflow.tracking.client.MlflowClient()
+# COMMAND ----------
 
-host_creds = client()._tracking_client.store.get_host_creds()
-host = host_creds.host
-token = host_creds.token
+# # Run this command only once when registering the first version of the new model
+# import mlflow
+# from mlflow.tracking import MlflowClient
 
-def mlflow_call_endpoint(endpoint, method, body='{}'):
-  if method == 'GET':
-      response = http_request(
-          host_creds=host_creds, endpoint="/api/2.0/mlflow/{}".format(endpoint), method=method, params=json.loads(body))
-  else:
-      response = http_request(
-          host_creds=host_creds, endpoint="/api/2.0/mlflow/{}".format(endpoint), method=method, json=json.loads(body))
-  return response.json()
+# client = MlflowClient()
 
-#dbutils.widgets.text("model_name", "")
+# model_uri = f"runs:/{run_id}/model"
+
+# client.set_tag(run_id, key='db_table', value=f"{database_name}.{churn_features_tbl_name}")
+# client.set_tag(run_id, key='demographic_vars', value='seniorCitizen,gender_Female')
+
+# model_details = mlflow.register_model(model_uri, model_name)
+
+# COMMAND ----------
+
+# Remove all existing webhooks for our model.
+# It is a cleanup to avoid duplicate webhooks for demo.
+list_model_webhooks = json.dumps({"model_name": model_name})
+
+webhooks = mlflow_call_endpoint("registry-webhooks/list", method = "GET", body = list_model_webhooks)
+
+if len(webhooks) > 0:
+  for webhook in webhooks['webhooks']:
+    mlflow_call_endpoint("registry-webhooks/delete",
+                       method="DELETE",
+                       body = json.dumps({'id': f"{webhook['id']}"}))
 
 # COMMAND ----------
 
@@ -67,12 +76,8 @@ def mlflow_call_endpoint(endpoint, method, body='{}'):
 
 # COMMAND ----------
 
-job_id = "435269"
-
-# COMMAND ----------
-
 # Which model in the registry will we create a webhook for?
-model_name = dbutils.widgets.get("model_name")
+# The model_name variable is defined in "../includes/configuration" script
 
 trigger_job = json.dumps({
   "model_name": model_name,
@@ -101,15 +106,10 @@ mlflow_call_endpoint("registry-webhooks/create", method = "POST", body = trigger
 
 # COMMAND ----------
 
-slack_webhook = "https://hooks.slack.com/services/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"
-
-
-# COMMAND ----------
-
-import urllib 
+#import urllib 
 import json 
 
-###slack_webhook = dbutils.secrets.get("rk_webhooks", "slack")
+###slack_webhook = dbutils.secrets.get("demo_webhooks", "slack")
 
 # consider REGISTERED_MODEL_CREATED to run tests and autoamtic deployments to stages 
 trigger_slack = json.dumps({
@@ -159,7 +159,7 @@ mlflow_call_endpoint("registry-webhooks/create", method = "POST", body = trigger
 
 # COMMAND ----------
 
-import urllib 
+#import urllib 
 import json 
 
 trigger_slack = json.dumps({
@@ -192,14 +192,31 @@ mlflow_call_endpoint("registry-webhooks/list", method = "GET", body = list_model
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ##### Delete
+# MAGIC ##### Delete a single webhook
 
 # COMMAND ----------
 
-# Remove a webhook
-mlflow_call_endpoint("registry-webhooks/delete",
-                     method="DELETE",
-                     body = json.dumps({'id': 'a71a2bba8ed6470f9461eb5ca18c3dba'}))
+# # Delete a webhook
+# mlflow_call_endpoint("registry-webhooks/delete",
+#                      method="DELETE",
+#                      body = json.dumps({'id': 'ff72361d77fb4e5e884a043255ca20ab'}))
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ##### Delete all webhooks for a given model
+
+# COMMAND ----------
+
+# list_model_webhooks = json.dumps({"model_name": model_name})
+
+# webhooks = mlflow_call_endpoint("registry-webhooks/list", method = "GET", body = list_model_webhooks)
+
+# if len(webhooks) > 0:
+#   for webhook in webhooks['webhooks']:
+#     mlflow_call_endpoint("registry-webhooks/delete",
+#                        method="DELETE",
+#                        body = json.dumps({'id': f"{webhook['id']}"}))
 
 # COMMAND ----------
 
@@ -212,7 +229,7 @@ mlflow_call_endpoint("registry-webhooks/delete",
 # COMMAND ----------
 
 # MAGIC %md-sandbox
-# MAGIC &copy; 2021 Databricks, Inc. All rights reserved.<br/>
+# MAGIC &copy; 2022 Databricks, Inc. All rights reserved.<br/>
 # MAGIC Apache, Apache Spark, Spark and the Spark logo are trademarks of the <a href="http://www.apache.org/">Apache Software Foundation</a>.<br/>
 # MAGIC <br/>
 # MAGIC <a href="https://databricks.com/privacy-policy">Privacy Policy</a> | <a href="https://databricks.com/terms-of-use">Terms of Use</a> | <a href="http://help.databricks.com/">Support</a>

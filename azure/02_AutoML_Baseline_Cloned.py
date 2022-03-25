@@ -1,24 +1,20 @@
 # Databricks notebook source
 # MAGIC %md
-# MAGIC <img src="https://github.com/RafiKurlansik/laughing-garbanzo/blob/main/step2.png?raw=true">
-
-# COMMAND ----------
-
-# MAGIC %md
-# MAGIC # Logistic Regression training
-# MAGIC This is an auto-generated notebook. To reproduce these results, attach this notebook to the **oleg-datapalooza** cluster and rerun it.
-# MAGIC - Navigate to the parent notebook [here](#notebook/3273455665514091)
-# MAGIC - Compare trials in the [MLflow experiment](#mlflow/experiments/3273455665514099/s?orderByKey=metrics.%60val_f1_score%60&orderByAsc=false)
+# MAGIC # XGBoost training
+# MAGIC This is an auto-generated notebook. To reproduce these results, attach this notebook to the **oleg-demo-ml** cluster and rerun it.
+# MAGIC - Compare trials in the [MLflow experiment](#mlflow/experiments/1310575922532099/s?orderByKey=metrics.%60val_f1_score%60&orderByAsc=false)
+# MAGIC - Navigate to the parent notebook [here](#notebook/1310575922532089) (If you launched the AutoML experiment using the Experiments UI, this link isn't very useful.)
 # MAGIC - Clone this notebook into your project folder by selecting **File > Clone** in the notebook toolbar.
 # MAGIC 
-# MAGIC Runtime Version: _8.3.x-cpu-ml-scala2.12_
+# MAGIC Runtime Version: _10.3.x-cpu-ml-scala2.12_
 
 # COMMAND ----------
 
 import mlflow
+import databricks.automl_runtime
 
 # Use MLflow to track experiments
-mlflow.set_experiment("/Users/oleg.kuzmin@databricks.com/databricks_automl/churn_exp_datapalooza-test")
+mlflow.set_experiment("/Users/oleg.kuzmin@databricks.com/databricks_automl/churn_churn_features_datapalooza-2022_03_10-21_36")
 
 target_col = "churn"
 
@@ -26,30 +22,48 @@ target_col = "churn"
 
 # MAGIC %md
 # MAGIC ## Load Data
+# MAGIC > **NOTE:** The dataset loaded below is a sample of the original dataset.
+# MAGIC Stratified sampling using pyspark's [sampleBy](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.sql.DataFrameStatFunctions.sampleBy.html)
+# MAGIC method is used to ensure that the distribution of the target column is retained.
+# MAGIC <br/>
+# MAGIC > Rows were sampled with a sampling fraction of **0.1346841363498925**
 
 # COMMAND ----------
 
+from mlflow.tracking import MlflowClient
 import os
 import uuid
 import shutil
 import pandas as pd
 
-from mlflow.tracking import MlflowClient
-
 # Create temp directory to download input data from MLflow
-input_temp_dir = os.path.join(os.environ["SPARK_LOCAL_DIRS"], str(uuid.uuid4())[:8])
+input_temp_dir = os.path.join(os.environ["SPARK_LOCAL_DIRS"], "tmp", str(uuid.uuid4())[:8])
 os.makedirs(input_temp_dir)
+
 
 # Download the artifact and read it into a pandas DataFrame
 input_client = MlflowClient()
-input_data_path = input_client.download_artifacts("876d6369afed47adaacb9d1f4e493506", "data", input_temp_dir)
-df_loaded = pd.read_parquet(os.path.join(input_data_path, "training_data"))
+input_data_path = input_client.download_artifacts("64506b8e45584a20a79d19cd7fd5d1be", "data", input_temp_dir)
 
+df_loaded = pd.read_parquet(os.path.join(input_data_path, "training_data"))
 # Delete the temp data
 shutil.rmtree(input_temp_dir)
 
 # Preview data
 df_loaded.head(5)
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC ### Select supported columns
+# MAGIC Select only the columns that are supported. This allows us to train a model that can predict on a dataset that has extra columns that are not used in training.
+# MAGIC `["customerID"]` are dropped in the pipelines. See the Alerts tab of the AutoML Experiment page for details on why these columns are dropped.
+
+# COMMAND ----------
+
+from databricks.automl_runtime.sklearn.column_selector import ColumnSelector
+supported_cols = ["seniorCitizen", "streamingMovies_Nointernetservice", "contract_Twoyear", "monthlyCharges", "internetService_DSL", "deviceProtection_No", "partner_No", "onlineSecurity_No", "paperlessBilling_No", "techSupport_Yes", "tenure", "streamingMovies_Yes", "techSupport_No", "onlineBackup_No", "totalCharges", "internetService_No", "paymentMethod_Electroniccheck", "partner_Yes", "dependents_Yes", "streamingTV_Yes", "internetService_Fiberoptic", "multipleLines_No", "streamingTV_Nointernetservice", "contract_Month-to-month", "onlineSecurity_Nointernetservice", "paymentMethod_Creditcard-automatic", "onlineBackup_Nointernetservice", "contract_Oneyear", "phoneService_No", "deviceProtection_Nointernetservice", "dependents_No", "streamingTV_No", "onlineSecurity_Yes", "techSupport_Nointernetservice", "phoneService_Yes", "gender_Male", "onlineBackup_Yes", "streamingMovies_No", "deviceProtection_Yes", "paymentMethod_Mailedcheck", "multipleLines_Yes", "gender_Female", "paperlessBilling_Yes", "paymentMethod_Banktransfer-automatic", "multipleLines_Nophoneservice"]
+col_selector = ColumnSelector(supported_cols)
 
 # COMMAND ----------
 
@@ -70,8 +84,15 @@ transformers = []
 # COMMAND ----------
 
 from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 
-transformers.append(("numerical", SimpleImputer(strategy="mean"), ['contract_Month-to-month', 'contract_Oneyear', 'contract_Twoyear', 'dependents_No', 'dependents_Yes', 'deviceProtection_No', 'deviceProtection_Nointernetservice', 'deviceProtection_Yes', 'gender_Female', 'gender_Male', 'internetService_DSL', 'internetService_Fiberoptic', 'internetService_No', 'multipleLines_No', 'multipleLines_Nophoneservice', 'multipleLines_Yes', 'onlineBackup_No', 'onlineBackup_Nointernetservice', 'onlineBackup_Yes', 'onlineSecurity_No', 'onlineSecurity_Nointernetservice', 'onlineSecurity_Yes', 'paperlessBilling_No', 'paperlessBilling_Yes', 'partner_No', 'partner_Yes', 'paymentMethod_Banktransfer-automatic', 'paymentMethod_Creditcard-automatic', 'paymentMethod_Electroniccheck', 'paymentMethod_Mailedcheck', 'phoneService_No', 'phoneService_Yes', 'seniorCitizen', 'streamingMovies_No', 'streamingMovies_Nointernetservice', 'streamingMovies_Yes', 'streamingTV_No', 'streamingTV_Nointernetservice', 'streamingTV_Yes', 'techSupport_No', 'techSupport_Nointernetservice', 'techSupport_Yes', 'monthlyCharges', 'tenure', 'totalCharges']))
+numerical_pipeline = Pipeline(steps=[
+    ("converter", FunctionTransformer(lambda df: df.apply(pd.to_numeric, errors="coerce"))),
+    ("imputer", SimpleImputer(strategy="mean"))
+])
+
+transformers.append(("numerical", numerical_pipeline, ["monthlyCharges", "tenure", "totalCharges"]))
 
 # COMMAND ----------
 
@@ -81,22 +102,18 @@ transformers.append(("numerical", SimpleImputer(strategy="mean"), ['contract_Mon
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Feature hashing
-# MAGIC Convert each string column into multiple numerical columns.
-# MAGIC For each input string column, the number of output columns is 4096.
-# MAGIC This is used for string columns with relatively many unique values.
+# MAGIC #### Low-cardinality categoricals
+# MAGIC Convert each low-cardinality categorical column into multiple binary columns through one-hot encoding.
+# MAGIC For each input categorical column (string or numeric), the number of output columns is equal to the number of unique values in the input column.
 
 # COMMAND ----------
 
-from sklearn.feature_extraction import FeatureHasher
-from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
 
-for feature in ['customerID']:
-    hash_transformer = Pipeline(steps=[
-        ("imputer", SimpleImputer(missing_values=None, strategy="constant", fill_value="")),
-        (f"{feature}_hasher", FeatureHasher(n_features=4096, input_type="string"))])
-    transformers.append((f"{feature}_hasher", hash_transformer, [feature]))
+one_hot_encoder = OneHotEncoder(handle_unknown="ignore")
+
+transformers.append(("onehot", one_hot_encoder, ["seniorCitizen", "streamingMovies_Nointernetservice", "contract_Twoyear", "internetService_DSL", "deviceProtection_No", "partner_No", "onlineSecurity_No", "paperlessBilling_No", "techSupport_Yes", "streamingMovies_Yes", "techSupport_No", "onlineBackup_No", "internetService_No", "paymentMethod_Electroniccheck", "partner_Yes", "dependents_Yes", "streamingTV_Yes", "multipleLines_No", "internetService_Fiberoptic", "streamingTV_Nointernetservice", "contract_Month-to-month", "onlineSecurity_Nointernetservice", "paymentMethod_Creditcard-automatic", "onlineBackup_Nointernetservice", "contract_Oneyear", "phoneService_No", "deviceProtection_Nointernetservice", "dependents_No", "streamingTV_No", "onlineSecurity_Yes", "techSupport_Nointernetservice", "phoneService_Yes", "gender_Male", "onlineBackup_Yes", "streamingMovies_No", "deviceProtection_Yes", "paymentMethod_Mailedcheck", "multipleLines_Yes", "gender_Female", "paperlessBilling_Yes", "paymentMethod_Banktransfer-automatic", "multipleLines_Nophoneservice"]))
 
 # COMMAND ----------
 
@@ -119,8 +136,11 @@ standardizer = StandardScaler()
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC ## Training - Validation Split
-# MAGIC Split the input data into training and validation data
+# MAGIC ## Train - Validation - Test Split
+# MAGIC Split the input data into 3 sets:
+# MAGIC - Train (60% of the dataset used to train the model)
+# MAGIC - Validation (20% of the dataset used to tune the hyperparameters of the model)
+# MAGIC - Test (20% of the dataset used to report the true performance of the model on an unseen dataset)
 
 # COMMAND ----------
 
@@ -129,22 +149,26 @@ from sklearn.model_selection import train_test_split
 split_X = df_loaded.drop([target_col], axis=1)
 split_y = df_loaded[target_col]
 
-X_train, X_val, y_train, y_val = train_test_split(split_X, split_y, random_state=442822687, stratify=split_y)
+# Split out train data
+X_train, split_X_rem, y_train, split_y_rem = train_test_split(split_X, split_y, train_size=0.6, random_state=989166059, stratify=split_y)
+
+# Split remaining data equally for validation and test
+X_val, X_test, y_val, y_test = train_test_split(split_X_rem, split_y_rem, test_size=0.5, random_state=989166059, stratify=split_y_rem)
 
 # COMMAND ----------
 
 # MAGIC %md
 # MAGIC ## Train classification model
 # MAGIC - Log relevant metrics to MLflow to track runs
-# MAGIC - All the runs are logged under [this MLflow experiment](#mlflow/experiments/3273455665514099/s?orderByKey=metrics.%60val_f1_score%60&orderByAsc=false)
+# MAGIC - All the runs are logged under [this MLflow experiment](#mlflow/experiments/1310575922532099/s?orderByKey=metrics.%60val_f1_score%60&orderByAsc=false)
 # MAGIC - Change the model parameters and re-run the training cell to log a different trial to the MLflow experiment
 # MAGIC - To view the full list of tunable hyperparameters, check the output of the cell below
 
 # COMMAND ----------
 
-from sklearn.linear_model import LogisticRegression
+from xgboost import XGBClassifier
 
-help(LogisticRegression)
+help(XGBClassifier)
 
 # COMMAND ----------
 
@@ -153,19 +177,36 @@ import sklearn
 from sklearn import set_config
 from sklearn.pipeline import Pipeline
 
-set_config(display='diagram')
+set_config(display="diagram")
 
-sklr_classifier = LogisticRegression(
-  C=7.692262065239437,
-  penalty="l2",
-  random_state=694904931,
+xgbc_classifier = XGBClassifier(
+  colsample_bytree=0.27913566876769075,
+  learning_rate=0.18062622297056377,
+  max_depth=8,
+  min_child_weight=16,
+  n_estimators=118,
+  n_jobs=100,
+  subsample=0.36162587536939694,
+  verbosity=0,
+  random_state=989166059,
 )
 
 model = Pipeline([
+    ("column_selector", col_selector),
     ("preprocessor", preprocessor),
     ("standardizer", standardizer),
-    ("classifier", sklr_classifier),
+    ("classifier", xgbc_classifier),
 ])
+
+# Create a separate pipeline to transform the validation dataset. This is used for early stopping.
+pipeline = Pipeline([
+    ("column_selector", col_selector),
+    ("preprocessor", preprocessor),
+    ("standardizer", standardizer),
+])
+
+mlflow.sklearn.autolog(disable=True)
+X_val_processed = pipeline.fit_transform(X_val, y_val)
 
 model
 
@@ -174,14 +215,47 @@ model
 # Enable automatic logging of input samples, metrics, parameters, and models
 mlflow.sklearn.autolog(log_input_examples=True, silent=True)
 
-with mlflow.start_run(run_name="logistic_regression") as mlflow_run:
-    model.fit(X_train, y_train)
+with mlflow.start_run(run_name="xgboost") as mlflow_run:
+    model.fit(X_train, y_train, classifier__early_stopping_rounds=5, classifier__eval_set=[(X_val_processed,y_val)], classifier__verbose=False)
     
     # Training metrics are logged by MLflow autologging
     # Log metrics for the validation set
-    sklr_val_metrics = mlflow.sklearn.eval_and_log_metrics(model, X_val, y_val,
-                                                                prefix="val_")
-    display(pd.DataFrame(sklr_val_metrics, index=[0]))
+    xgbc_val_metrics = mlflow.sklearn.eval_and_log_metrics(model, X_val, y_val, prefix="val_")
+
+    # Log metrics for the test set
+    xgbc_test_metrics = mlflow.sklearn.eval_and_log_metrics(model, X_test, y_test, prefix="test_")
+
+    # Display the logged metrics
+    xgbc_val_metrics = {k.replace("val_", ""): v for k, v in xgbc_val_metrics.items()}
+    xgbc_test_metrics = {k.replace("test_", ""): v for k, v in xgbc_test_metrics.items()}
+    display(pd.DataFrame([xgbc_val_metrics, xgbc_test_metrics], index=["validation", "test"]))
+
+# COMMAND ----------
+
+# Patch requisite packages to the model environment YAML for model serving
+import os
+import shutil
+import uuid
+import yaml
+
+None
+
+import xgboost
+from mlflow.tracking import MlflowClient
+
+xgbc_temp_dir = os.path.join(os.environ["SPARK_LOCAL_DIRS"], str(uuid.uuid4())[:8])
+os.makedirs(xgbc_temp_dir)
+xgbc_client = MlflowClient()
+xgbc_model_env_path = xgbc_client.download_artifacts(mlflow_run.info.run_id, "model/conda.yaml", xgbc_temp_dir)
+xgbc_model_env_str = open(xgbc_model_env_path)
+xgbc_parsed_model_env_str = yaml.load(xgbc_model_env_str, Loader=yaml.FullLoader)
+
+xgbc_parsed_model_env_str["dependencies"][-1]["pip"].append(f"xgboost=={xgboost.__version__}")
+
+with open(xgbc_model_env_path, "w") as f:
+  f.write(yaml.dump(xgbc_parsed_model_env_str))
+xgbc_client.log_artifact(run_id=mlflow_run.info.run_id, local_path=xgbc_model_env_path, artifact_path="model")
+shutil.rmtree(xgbc_temp_dir)
 
 # COMMAND ----------
 
@@ -191,6 +265,9 @@ with mlflow.start_run(run_name="logistic_regression") as mlflow_run:
 # MAGIC SHAP is a game-theoretic approach to explain machine learning models, providing a summary plot
 # MAGIC of the relationship between features and model output. Features are ranked in descending order of
 # MAGIC importance, and impact/color describe the correlation between the feature and the target variable.
+# MAGIC - Generating SHAP feature importance is a very memory intensive operation, so to ensure that AutoML can run trials without
+# MAGIC   running out of memory, we disable SHAP by default.<br />
+# MAGIC   You can set the flag defined below to `shap_enabled = True` and re-run this notebook to see the SHAP plots.
 # MAGIC - To reduce the computational overhead of each trial, a single example is sampled from the validation set to explain.<br />
 # MAGIC   For more thorough results, increase the sample size of explanations, or provide your own examples to explain.
 # MAGIC - SHAP cannot explain models using data with nulls; if your dataset has any, both the background data and
@@ -201,9 +278,13 @@ with mlflow.start_run(run_name="logistic_regression") as mlflow_run:
 
 # COMMAND ----------
 
-from shap import KernelExplainer, summary_plot
+# Set this flag to True and re-run the notebook to see the SHAP plots
+shap_enabled = False
 
-try:
+# COMMAND ----------
+
+if shap_enabled:
+    from shap import KernelExplainer, summary_plot
     # Sample background data for SHAP Explainer. Increase the sample size to reduce variance.
     train_sample = X_train.sample(n=min(100, len(X_train.index)))
 
@@ -211,12 +292,10 @@ try:
     example = X_val.sample(n=1)
 
     # Use Kernel SHAP to explain feature importance on the example from the validation set.
-    predict = lambda x: model.predict_proba(pd.DataFrame(x, columns=X_train.columns))
-    explainer = KernelExplainer(predict, train_sample, link="logit")
+    predict = lambda x: model.predict(pd.DataFrame(x, columns=X_train.columns))
+    explainer = KernelExplainer(predict, train_sample, link="identity")
     shap_values = explainer.shap_values(example, l1_reg=False)
-    summary_plot(shap_values, example)
-except Exception as e:
-    print(f"An unexpected error occurred while plotting feature importance using SHAP: {e}")
+    summary_plot(shap_values, example, class_names=model.classes_)
 
 # COMMAND ----------
 

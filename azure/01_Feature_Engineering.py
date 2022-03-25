@@ -6,42 +6,51 @@
 
 # COMMAND ----------
 
-# MAGIC %md
-# MAGIC ### Featurization Logic
-# MAGIC 
-# MAGIC This is a fairly clean dataset so we'll just do some one-hot encoding, and clean up the column names afterward.
+# MAGIC %run ../includes/configuration
 
 # COMMAND ----------
 
-# Read into Spark
-telcoDF = spark.table("ibm_telco_churn.bronze_customers")
+# MAGIC %md
+# MAGIC ## Featurization Logic
+# MAGIC 
+# MAGIC This is a fairly clean dataset so we'll just do some one-hot encoding and clean up the column names afterward.
+
+# COMMAND ----------
+
+# Read the bronze table into Spark
+telcoDF = spark.table(f"{database_name}.{bronze_tbl_name}")
 
 display(telcoDF)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC Using `koalas` to scale my teammates' `pandas` code (**Databricks Runtime 7.3 through 9.1**).
+# MAGIC (**Databricks Runtime 7.3 through 9.1**): use `import databricks.koalas as ps` to scale my teammates' single-node `pandas` code .
 # MAGIC 
-# MAGIC Starting with **Databricks Runtime 10.0**, use `import pyspark.pandas as ps` instead (Pandas API on Spark is available in Apache Spark 3.2)
+# MAGIC Starting with **Databricks Runtime 10.0**, use `import pyspark.pandas as ps` instead (distributed Pandas API on Spark is available in Apache Spark 3.2)
 
 # COMMAND ----------
 
-from databricks.feature_store import feature_table
-import databricks.koalas as ks
+###from databricks.feature_store import feature_table
+#import databricks.koalas as ps
+import pyspark.pandas as ps
 
 def compute_churn_features(data):
   
-  # Convert to koalas
-  data = data.to_koalas()
+  # Convert to koalas (DBR 7.3 - 9.1)
+  #data = data.to_koalas()
+  
+  # Convert to pandas (DBR 10.0+)
+  data = ps.DataFrame(data)
   
   # OHE
-  data = ks.get_dummies(data, 
+  data = ps.get_dummies(data, 
                         columns=['gender', 'partner', 'dependents',
                                  'phoneService', 'multipleLines', 'internetService',
                                  'onlineSecurity', 'onlineBackup', 'deviceProtection',
                                  'techSupport', 'streamingTV', 'streamingMovies',
-                                 'contract', 'paperlessBilling', 'paymentMethod'],dtype = 'int64')
+                                 'contract', 'paperlessBilling', 'paymentMethod'],
+                        dtype = 'int64')
   
   # Convert label to int and rename column
   data['churnString'] = data['churnString'].map({'Yes': 1, 'No': 0})
@@ -49,9 +58,9 @@ def compute_churn_features(data):
   data = data.rename(columns = {'churnString': 'churn'})
   
   # Clean up column names
-  data.columns = data.columns.str.replace(' ', '')
-  data.columns = data.columns.str.replace('(', '-')
-  data.columns = data.columns.str.replace(')', '')
+  data.columns = data.columns.str.replace(' ', '', regex=False)
+  data.columns = data.columns.str.replace('(', '-', regex=False)
+  data.columns = data.columns.str.replace(')', '', regex=False)
   
   # Drop missing values
   data = data.dropna()
@@ -61,7 +70,7 @@ def compute_churn_features(data):
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Compute and write features
+# MAGIC ### Compute and write features to the Feature Store
 
 # COMMAND ----------
 
@@ -71,19 +80,27 @@ fs = FeatureStoreClient()
 
 churn_features_df = compute_churn_features(telcoDF)
 
-churn_feature_table = fs.create_feature_table(
-  name='ibm_telco_churn.churn_features_datapalooza',
-  keys='customerID',
-  schema=churn_features_df.spark.schema(),
-  description='These features are derived from the ibm_telco_churn.bronze_customers table in the lakehouse.  I created dummy variables for the categorical columns, cleaned up their names, and added a boolean flag for whether the customer churned or not.  No aggregations were performed.'
+# TODO: delete_table() method is not available yet, will add it to this demo when available.
+# You can delete an existing feature table from the Feature Store UI now.
+
+# for DBRs before 10.2 ML, use fs.create_feature_table() method instead of fs.create_table()
+churn_feature_table = fs.create_table(
+                         name=f"{database_name}.{churn_features_tbl_name}",
+                         primary_keys="customerID",
+                         schema=churn_features_df.spark.schema(),
+                         description=f"These features are derived from the {database_name}.{bronze_tbl_name} table in the lakehouse.  I created dummy variables (one-hot encoded) for the categorical columns, cleaned up their names, and added a boolean flag for whether the customer churned or not.  No aggregations were performed."
 )
 
-fs.write_table(df=churn_features_df.to_spark(), name='ibm_telco_churn.churn_features_datapalooza', mode='overwrite')
+(fs.write_table(
+                df=churn_features_df.to_spark(),
+                name=f"{database_name}.{churn_features_tbl_name}",
+                mode='overwrite')
+)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC As an alternative we could always write to Delta Lake:
+# MAGIC As an alternative to using the Feature Store, we could always write to a Delta table:
 
 # COMMAND ----------
 

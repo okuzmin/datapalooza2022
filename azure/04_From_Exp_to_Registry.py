@@ -19,6 +19,10 @@
 
 # COMMAND ----------
 
+# MAGIC %run ../includes/configuration
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### How to Use the Model Registry
 # MAGIC Typically, data scientists who use MLflow will conduct many experiments, each with a number of runs that track and log metrics and parameters. During the course of this development cycle, they will select the best run within an experiment and register its model with the registry.  Think of this as **committing** the model to the registry, much as you would commit code to a version control system.  
@@ -40,17 +44,15 @@
 
 # COMMAND ----------
 
+# This command will create a new version of an existing model
 import mlflow
 from mlflow.tracking import MlflowClient
 
 client = MlflowClient()
 
-###run_id = '0e6044845e604fb5b638d78005aa1bb0'
-run_id = '3e45354005f347eaa572ca9dcbc6f8f7'
-model_name = "hhar_churn"
 model_uri = f"runs:/{run_id}/model"
 
-client.set_tag(run_id, key='db_table', value='ibm_telco_churn.churn_features_datapalooza')
+client.set_tag(run_id, key='db_table', value=f"{database_name}.{churn_features_tbl_name}")
 client.set_tag(run_id, key='demographic_vars', value='seniorCitizen,gender_Female')
 
 model_details = mlflow.register_model(model_uri, model_name)
@@ -74,13 +76,13 @@ model_version_details = client.get_model_version(name=model_name, version=model_
 
 client.update_registered_model(
   name=model_details.name,
-  description="This model predicts whether a customer will churn using features from the ibm_telco_churn database.  It is used to update the Telco Churn Dashboard in SQL Analytics."
+  description=f"This model predicts whether a customer will churn using features from the {database_name} database.  It is used to update the Telco Churn Dashboard in SQL Analytics."
 )
 
 client.update_model_version(
   name=model_details.name,
   version=model_details.version,
-  description="This model version was built using sklearn's LogisticRegression."
+  description="This model version was built using sklearn's LogisticRegression - or maybe not :)"
 )
 
 # COMMAND ----------

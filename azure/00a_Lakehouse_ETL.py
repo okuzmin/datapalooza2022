@@ -1,4 +1,8 @@
 # Databricks notebook source
+# MAGIC %run ../includes/configuration
+
+# COMMAND ----------
+
 # MAGIC %md
 # MAGIC ### Setup
 # MAGIC 
@@ -7,7 +11,10 @@
 # COMMAND ----------
 
 # MAGIC %sh
-# MAGIC wget https://raw.githubusercontent.com/IBM/telco-customer-churn-on-icp4d/master/data/Telco-Customer-Churn.csv
+# MAGIC # Download the CSV data file and save it in the temporary file:/tmp/ folder
+# MAGIC CSV_FILE="Telco-Customer-Churn.csv"
+# MAGIC rm /tmp/$CSV_FILE
+# MAGIC wget https://raw.githubusercontent.com/IBM/telco-customer-churn-on-icp4d/master/data/$CSV_FILE -P /tmp/
 
 # COMMAND ----------
 
@@ -17,45 +24,34 @@
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Path configs
+# MAGIC #### Prepare the database and tables
 
 # COMMAND ----------
 
 # Load libraries
 import shutil
 import numpy as np # linear algebra
-import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
+import pandas as pd # data processing, CSV file I/O (e.g., pd.read_csv)
 from pyspark.sql.functions import col, when
-from pyspark.sql.types import StructType,StructField,DoubleType, StringType, IntegerType, FloatType
+from pyspark.sql.types import StructType, StructField, DoubleType, StringType, IntegerType, FloatType
 
-# Set config for database name, file paths, and table names
-database_name = 'ibm_telco_churn'
+# Downloaded file name
+csv_file = "Telco-Customer-Churn.csv"
 
-# Move file from driver to DBFS
-user = dbutils.notebook.entry_point.getDbutils().notebook().getContext().tags().apply('user')
-driver_to_dbfs_path = 'dbfs:/home/{}/ibm-telco-churn/Telco-Customer-Churn.csv'.format(user)
-dbutils.fs.cp('file:/databricks/driver/Telco-Customer-Churn.csv', driver_to_dbfs_path)
-
-# Paths for various Delta tables
-bronze_tbl_path = '/home/{}/ibm-telco-churn/bronze/'.format(user)
-silver_tbl_path = '/home/{}/ibm-telco-churn/silver/'.format(user)
-automl_tbl_path = '/home/{}/ibm-telco-churn/automl-silver/'.format(user)
-telco_preds_path = '/home/{}/ibm-telco-churn/preds/'.format(user)
-
-bronze_tbl_name = 'bronze_customers'
-silver_tbl_name = 'silver_customers'
-automl_tbl_name = 'gold_customers'
-telco_preds_tbl_name = 'telco_preds'
+# Move file from the temporary folder to DBFS
+driver_to_dbfs_path = f"dbfs:/home/{user}/{database_name}/{csv_file}"
+dbutils.fs.cp(f"file:/tmp/{csv_file}", driver_to_dbfs_path)
 
 # Delete the old database and tables if needed
-_ = spark.sql('DROP DATABASE IF EXISTS {} CASCADE'.format(database_name))
+spark.sql(f"DROP DATABASE IF EXISTS {database_name} CASCADE")
 
 # Create database to house tables
-_ = spark.sql('CREATE DATABASE {}'.format(database_name))
-# Drop any old delta lake files if needed (e.g. re-running this notebook with the same bronze_tbl_path and silver_tbl_path)
-shutil.rmtree('/dbfs'+bronze_tbl_path, ignore_errors=True)
-shutil.rmtree('/dbfs'+silver_tbl_path, ignore_errors=True)
-shutil.rmtree('/dbfs'+telco_preds_path, ignore_errors=True)
+spark.sql(f"CREATE DATABASE {database_name}")
+
+# Delete any old Delta table files if needed (e.g., re-running this notebook with the same table paths)
+shutil.rmtree(f"/dbfs{bronze_tbl_path}", ignore_errors=True)
+shutil.rmtree(f"/dbfs{silver_tbl_path}", ignore_errors=True)
+shutil.rmtree(f"/dbfs{telco_preds_path}", ignore_errors=True)
 
 # COMMAND ----------
 
@@ -90,26 +86,28 @@ schema = StructType([
   ])
 
 # Read CSV, write to Delta and take a look
-bronze_df = spark.read.format('csv').schema(schema).option('header','true')\
-               .load(driver_to_dbfs_path)
+bronze_df = (spark.read.format('csv')
+                       .schema(schema)
+                       .option('header', 'true')
+                       .load(driver_to_dbfs_path))
 
-bronze_df.write.format('delta').mode('overwrite').save(bronze_tbl_path)
+(bronze_df.write.format('delta')
+                .mode('overwrite')
+                .save(bronze_tbl_path))
 
 display(bronze_df)
 
 # COMMAND ----------
 
 # MAGIC %md
-# MAGIC #### Create bronze
+# MAGIC ## Create bronze table
 
 # COMMAND ----------
 
 # Create bronze table
-_ = spark.sql('''
-  CREATE TABLE `{}`.{}
-  USING DELTA 
-  LOCATION '{}'
-  '''.format(database_name,bronze_tbl_name,bronze_tbl_path))
+spark.sql(f"""
+CREATE TABLE `{database_name}`.{bronze_tbl_name} USING DELTA LOCATION '{bronze_tbl_path}'
+""")
 
 # COMMAND ----------
 
